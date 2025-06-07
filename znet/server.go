@@ -1,6 +1,7 @@
 package znet
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -13,6 +14,17 @@ type Server struct {
 	IPVersion string // tcp4 or other
 	IP        string // 服务绑定的IP地址
 	Port      int    // 服务绑定的端口
+}
+
+// =============================== 定义客户端连接的handle api ===============================
+func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
+	// 回显业务
+	fmt.Println("[Conn Handle] CallBackToClient... ")
+	if _, err := conn.Write(data[:cnt]); err != nil {
+		fmt.Println("write back buf err ", err)
+		return errors.New("CallBackToClient error")
+	}
+	return nil
 }
 
 // =============================== 实现 ziface.IServer 里的全部接口方法 ===============================
@@ -40,6 +52,9 @@ func (s *Server) Start() {
 		// 已经监听成功
 		fmt.Println("start Zinx server ", s.Name, " succ, now listenning...")
 
+		var cid uint32
+		cid = 0
+
 		// 3 启动server网络连接业务
 		for {
 			// 3.1 阻塞等待客户端建立连接请求
@@ -52,24 +67,11 @@ func (s *Server) Start() {
 			// 3.2 TODO Server.Start() 设置服务器最大连接控制,如果超过最大连接，那么则关闭此新的连接
 
 			// 3.3 TODO Server.Start() 处理该新连接请求的 业务 方法， 此时应该有 handler 和 conn是绑定的
+			dealConn := NewConnection(conn, cid, CallBackToClient)
+			cid++
 
-			// 我们这里暂时做一个最大512字节的回显服务
-			go func() {
-				// 不断的循环从客户端获取数据
-				for {
-					buf := make([]byte, 512)
-					cnt, err := conn.Read(buf)
-					if err != nil {
-						fmt.Println("recv buf err ", err)
-						continue
-					}
-					// 回显
-					if _, err := conn.Write(buf[:cnt]); err != nil {
-						fmt.Println("write back buf err ", err)
-						continue
-					}
-				}
-			}()
+			// 3.4 启动连接的处理业务
+			go dealConn.Start()
 		}
 	}()
 }
