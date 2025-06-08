@@ -7,20 +7,20 @@ import (
 )
 
 type Connection struct {
-	Conn         *net.TCPConn    // 连接的socket套接字
-	ConnID       uint32          // 连接id
-	isClosed     bool            // 连接是否关闭
-	handleAPI    ziface.HandFunc // 连接的处理方法api
-	ExitBuffChan chan bool       // 告知连接状态的channel
+	Conn         *net.TCPConn   // 连接的socket套接字
+	ConnID       uint32         // 连接id
+	isClosed     bool           // 连接是否关闭
+	Router       ziface.IRouter // 连接的处理方法router
+	ExitBuffChan chan bool      // 告知连接状态的channel
 }
 
 // 创建连接
-func NewConnection(conn *net.TCPConn, connID uint32, callback_api ziface.HandFunc) *Connection {
+func NewConnection(conn *net.TCPConn, connID uint32, router ziface.IRouter) *Connection {
 	c := &Connection{
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
-		handleAPI:    callback_api,
+		Router:       router,
 		ExitBuffChan: make(chan bool, 1),
 	}
 	return c
@@ -35,18 +35,24 @@ func (c *Connection) StartReader() {
 	for {
 		// 读取最大的数据到buf中
 		buf := make([]byte, 512)
-		cnt, err := c.Conn.Read(buf)
+		_, err := c.Conn.Read(buf)
 		if err != nil {
 			fmt.Println("recv buf err ", err)
 			c.ExitBuffChan <- true
 			continue
 		}
-		// 调用连接业务
-		if err := c.handleAPI(c.Conn, buf, cnt); err != nil {
-			fmt.Println("connID ", c.ConnID, " handle is error")
-			c.ExitBuffChan <- true
-			return
+		// 得到客户端请求的Request数据
+		req := Request{
+			conn: c,
+			data: buf,
 		}
+		// 从路由 Routers 中找到对应的Handle
+		go func(request ziface.IRequest) {
+			// 执行注册的路由方法
+			c.Router.PreHandle(request)
+			c.Router.Handle(request)
+			c.Router.PostHandle(request)
+		}(&req)
 	}
 }
 

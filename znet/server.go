@@ -1,37 +1,45 @@
 package znet
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"time"
+	"zinx/utils"
 	"zinx/ziface"
 )
 
 // iServer 接口实现，定义一个Server服务类
 type Server struct {
-	Name      string // 服务器名称
-	IPVersion string // tcp4 or other
-	IP        string // 服务绑定的IP地址
-	Port      int    // 服务绑定的端口
+	Name      string         // 服务器名称
+	IPVersion string         // tcp4 or other
+	IP        string         // 服务绑定的IP地址
+	Port      int            // 服务绑定的端口
+	Router    ziface.IRouter // 服务回调router
 }
 
-// =============================== 定义客户端连接的handle api ===============================
-func CallBackToClient(conn *net.TCPConn, data []byte, cnt int) error {
-	// 回显业务
-	fmt.Println("[Conn Handle] CallBackToClient... ")
-	if _, err := conn.Write(data[:cnt]); err != nil {
-		fmt.Println("write back buf err ", err)
-		return errors.New("CallBackToClient error")
+// 创建一个服务器句柄
+func NewServer(name string) ziface.IServer {
+	utils.ServerConfig.Reload()
+
+	s := &Server{
+		Name:      utils.ServerConfig.Name,
+		IPVersion: "tcp4",
+		IP:        utils.ServerConfig.Host,
+		Port:      utils.ServerConfig.TcpPort,
+		Router:    nil,
 	}
-	return nil
+	return s
 }
 
 // =============================== 实现 ziface.IServer 里的全部接口方法 ===============================
 
 // 启动服务方法
 func (s *Server) Start() {
-	fmt.Printf("[START] Server listenner at IP: %s, Port %d, is starting\n", s.IP, s.Port)
+	fmt.Printf("[START] Server name: %s, listenner at IP: %s, Port %d is starting\n", s.Name, s.IP, s.Port)
+	fmt.Printf("[Zinx] Version: %s, MaxConn: %d,  MaxPacketSize: %d\n",
+		utils.ServerConfig.Version,
+		utils.ServerConfig.MaxConn,
+		utils.ServerConfig.MaxPacketSize)
 
 	// 开启一个go去做服务端Listen业务
 	go func() {
@@ -50,7 +58,7 @@ func (s *Server) Start() {
 		}
 
 		// 已经监听成功
-		fmt.Println("start Zinx server ", s.Name, " succ, now listenning...")
+		fmt.Println("start Zinx server", s.Name, "succ, now listenning...")
 
 		var cid uint32
 		cid = 0
@@ -67,7 +75,7 @@ func (s *Server) Start() {
 			// 3.2 TODO Server.Start() 设置服务器最大连接控制,如果超过最大连接，那么则关闭此新的连接
 
 			// 3.3 TODO Server.Start() 处理该新连接请求的 业务 方法， 此时应该有 handler 和 conn是绑定的
-			dealConn := NewConnection(conn, cid, CallBackToClient)
+			dealConn := NewConnection(conn, cid, s.Router)
 			cid++
 
 			// 3.4 启动连接的处理业务
@@ -95,13 +103,8 @@ func (s *Server) Serve() {
 	}
 }
 
-// 创建一个服务器句柄
-func NewServer(name string) ziface.IServer {
-	s := &Server{
-		Name:      name,
-		IPVersion: "tcp4",
-		IP:        "0.0.0.0",
-		Port:      7777,
-	}
-	return s
+// 路由功能
+func (s *Server) AddRouter(router ziface.IRouter) {
+	s.Router = router
+	fmt.Println("add router succ!")
 }
