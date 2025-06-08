@@ -60,9 +60,6 @@ func (s *Server) Start() {
 		// 已经监听成功
 		fmt.Println("start Zinx server", s.Name, "succ, now listenning...")
 
-		var cid uint32
-		cid = 0
-
 		// 3 启动server网络连接业务
 		for {
 			// 3.1 阻塞等待客户端建立连接请求
@@ -75,8 +72,7 @@ func (s *Server) Start() {
 			// 3.2 TODO Server.Start() 设置服务器最大连接控制,如果超过最大连接，那么则关闭此新的连接
 
 			// 3.3 TODO Server.Start() 处理该新连接请求的 业务 方法， 此时应该有 handler 和 conn是绑定的
-			dealConn := NewConnection(conn, cid, s.Router)
-			cid++
+			dealConn := NewConnection(conn, utils.GetUid(), s.Router)
 
 			// 3.4 启动连接的处理业务
 			go dealConn.Start()
