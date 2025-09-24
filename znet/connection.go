@@ -9,20 +9,21 @@ import (
 )
 
 type Connection struct {
-	Conn         *net.TCPConn   // 连接的socket套接字
-	ConnID       uint32         // 连接id
-	isClosed     bool           // 连接是否关闭
-	Router       ziface.IRouter // 连接的处理方法router
-	ExitBuffChan chan bool      // 告知连接状态的channel
+	Conn         *net.TCPConn      // 连接的socket套接字
+	ConnID       uint32            // 连接id
+	isClosed     bool              // 连接是否关闭
+	Router       ziface.IRouter    // 连接的处理方法router
+	MsgHandler   ziface.IMsgHanlde // 消息管理MsgId和对应处理方法的消息管理模块
+	ExitBuffChan chan bool         // 告知连接状态的channel
 }
 
 // 创建连接
-func NewConnection(conn *net.TCPConn, connID uint32, router ziface.IRouter) *Connection {
+func NewConnection(conn *net.TCPConn, connID uint32, msgHandler ziface.IMsgHanlde) *Connection {
 	c := &Connection{
 		Conn:         conn,
 		ConnID:       connID,
 		isClosed:     false,
-		Router:       router,
+		MsgHandler:   msgHandler,
 		ExitBuffChan: make(chan bool, 1),
 	}
 	return c
@@ -42,16 +43,14 @@ func (c *Connection) StartReader() {
 		headData := make([]byte, dp.GetHeadLen())
 		if _, err := io.ReadFull(c.GetTCPConn(), headData); err != nil {
 			fmt.Println("read msg head err ", err)
-			c.ExitBuffChan <- true
-			continue
+			break
 		}
 
-		// 拆包
+		// 拆包，得到msgId 和 dataLen 放在 msg 中
 		msg, err := dp.Unpack(headData)
 		if err != nil {
 			fmt.Println("unpack error", err)
-			c.ExitBuffChan <- true
-			continue
+			break
 		}
 
 		// 根据 dataLen 读取 data，放在msg.Data中
@@ -60,7 +59,6 @@ func (c *Connection) StartReader() {
 			data = make([]byte, msg.GetDataLen())
 			if _, err := io.ReadFull(c.GetTCPConn(), data); err != nil {
 				fmt.Println("read msg data error ", err)
-				c.ExitBuffChan <- true
 				continue
 			}
 		}
@@ -71,13 +69,8 @@ func (c *Connection) StartReader() {
 			conn: c,
 			msg:  msg,
 		}
-		// 从路由 Routers 中找到对应的Handle
-		go func(request ziface.IRequest) {
-			// 执行注册的路由方法
-			c.Router.PreHandle(request)
-			c.Router.Handle(request)
-			c.Router.PostHandle(request)
-		}(&req)
+		// 从绑定好的消息和对应的处理方法中执行对应的Handle方法
+		go c.MsgHandler.DoMsgHandler(&req)
 	}
 }
 
